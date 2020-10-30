@@ -170,6 +170,7 @@ UPROGS=\
 	_echo\
 	_forktest\
 	_grep\
+	_helloworld\
 	_init\
 	_kill\
 	_ln\
