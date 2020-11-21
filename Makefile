@@ -170,9 +170,9 @@ UPROGS=\
 	_echo\
 	_forktest\
 	_grep\
-	_helloworld\
 	_init\
 	_kill\
+	_lab2\
 	_ln\
 	_ls\
 	_mkdir\

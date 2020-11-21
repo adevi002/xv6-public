@@ -224,14 +224,12 @@ fork(void)
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait() to find out it exited.
-
 void
-exitS(int status)
+exit(void)
 {
   struct proc *curproc = myproc();
   struct proc *p;
   int fd;
-  curproc->exitStatus = status;
 
   if(curproc == initproc)
     panic("init exiting");
@@ -269,16 +267,10 @@ exitS(int status)
   panic("zombie exit");
 }
 
-void
-exit(void)
-{
-  exitS(0);
-}
-
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
 int
-wait(int *status) 	//(void) 	\\changed wait system call
+wait(void)
 {
   struct proc *p;
   int havekids, pid;
@@ -294,9 +286,6 @@ wait(int *status) 	//(void) 	\\changed wait system call
       havekids = 1;
       if(p->state == ZOMBIE){
         // Found one.
-	if(status){				//added for lab1part2
-	  *status = p->exitStatus;
-	}
         pid = p->pid;
         kfree(p->kstack);
         p->kstack = 0;
@@ -322,49 +311,6 @@ wait(int *status) 	//(void) 	\\changed wait system call
   }
 }
 
-//Adding waitpid system call for lab1part3
-int 
-waitpid(int pid, int *status, int options) 
-{
-  struct proc *p;
-  int wantpid;
-  int check = 0;
-  struct proc *curproc = myproc();
-
-  acquire(&ptable.lock);
-  for(;;) {
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
-      if(p->pid != pid) {
-	continue;
-      }
-      check = 1;
-      if(p->state == ZOMBIE) {
-	wantpid = p->pid;
-	kfree(p->kstack);
-	p->kstack = 0;
-	freevm(p->pgdir);
-	p->pid = 0;
-	p->parent = 0;
-	p->name[0] = 0;
-	p->killed = 0;
-	p->state = UNUSED;
-	if(status != 0) {
-	  *status = p->exitStatus;
-	}
-	release(&ptable.lock);
-	return wantpid;
-      }
-    }
-    
-    if(!check || curproc->killed) {
-      release(&ptable.lock);
-      return -1;
-    }
-
-    sleep(curproc, &ptable.lock);
-  }
-}
-
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
@@ -377,8 +323,11 @@ void
 scheduler(void)
 {
   struct proc *p;
+  struct proc *pr;
   struct cpu *c = mycpu();
   c->proc = 0;
+  int prior = 31;
+  struct proc *temp;
   
   for(;;){
     // Enable interrupts on this processor.
@@ -386,18 +335,39 @@ scheduler(void)
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+    temp = ptable.proc;
+    for(pr = ptable.proc; pr < &ptable.proc[NPROC]; pr++){
+      if(pr->priority >= 1){
+        pr->priority--;
+      }
+      else if(pr->priority <= 0 ){
+        pr->priority = 0;
+      }
+    }
+
+    for(pr = ptable.proc; pr < &ptable.proc[NPROC]; pr++){
+      if(prior >= pr->priority && pr->state == RUNNABLE){
+        prior = pr->priority;
+        temp = pr;
+      }
+    }
+
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
 
+      if(temp->state != RUNNABLE){
+        continue;
+      }
+
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
+      c->proc = temp;
+      switchuvm(temp);
+      temp->state = RUNNING;
 
-      swtch(&(c->scheduler), p->context);
+      swtch(&(c->scheduler), temp->context);
       switchkvm();
 
       // Process is done running for now.
@@ -407,6 +377,16 @@ scheduler(void)
     release(&ptable.lock);
 
   }
+}
+
+int
+setpriority(int newpriority){
+  struct proc *p = myproc();
+
+  if(newpriority >= 0 && newpriority <= 21){
+    p->priority = newpriority;
+  }
+  return newpriority;
 }
 
 // Enter scheduler.  Must hold only ptable.lock
