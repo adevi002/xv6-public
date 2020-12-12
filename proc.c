@@ -190,15 +190,17 @@ fork(void)
   }
 
   // Copy process state from proc.
-  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
+  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz, curproc->stackSize)) == 0){          //added curproc->stackSize
     kfree(np->kstack);
     np->kstack = 0;
     np->state = UNUSED;
     return -1;
   }
   np->sz = curproc->sz;
+  np->stackSize = curproc->stackSize;                                                   //added
   np->parent = curproc;
   *np->tf = *curproc->tf;
+  np->kstack = curproc->kstack;                                                         //added
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -323,11 +325,8 @@ void
 scheduler(void)
 {
   struct proc *p;
-  struct proc *pr;
   struct cpu *c = mycpu();
   c->proc = 0;
-  int prior = 31;
-  struct proc *temp;
   
   for(;;){
     // Enable interrupts on this processor.
@@ -335,39 +334,18 @@ scheduler(void)
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    temp = ptable.proc;
-    for(pr = ptable.proc; pr < &ptable.proc[NPROC]; pr++){
-      if(pr->priority >= 1){
-        pr->priority--;
-      }
-      else if(pr->priority <= 0 ){
-        pr->priority = 0;
-      }
-    }
-
-    for(pr = ptable.proc; pr < &ptable.proc[NPROC]; pr++){
-      if(prior >= pr->priority && pr->state == RUNNABLE){
-        prior = pr->priority;
-        temp = pr;
-      }
-    }
-
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
 
-      if(temp->state != RUNNABLE){
-        continue;
-      }
-
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
-      c->proc = temp;
-      switchuvm(temp);
-      temp->state = RUNNING;
+      c->proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
 
-      swtch(&(c->scheduler), temp->context);
+      swtch(&(c->scheduler), p->context);
       switchkvm();
 
       // Process is done running for now.
@@ -377,16 +355,6 @@ scheduler(void)
     release(&ptable.lock);
 
   }
-}
-
-int
-setpriority(int newpriority){
-  struct proc *p = myproc();
-
-  if(newpriority >= 0 && newpriority <= 21){
-    p->priority = newpriority;
-  }
-  return newpriority;
 }
 
 // Enter scheduler.  Must hold only ptable.lock

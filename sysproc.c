@@ -7,6 +7,28 @@
 #include "mmu.h"
 #include "proc.h"
 
+int sys_shm_open(void) {
+  int id;
+  char **pointer;
+
+  if(argint(0, &id) < 0)
+    return -1;
+
+  if(argptr(1, (char **) (&pointer),4)<0)
+    return -1;
+  return shm_open(id, pointer);
+}
+
+int sys_shm_close(void) {
+  int id;
+
+  if(argint(0, &id) < 0)
+    return -1;
+
+  
+  return shm_close(id);
+}
+
 int
 sys_fork(void)
 {
@@ -88,17 +110,4 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
-}
-
-int
-sys_setpriority(void)
-{
-  int priority;
-  
-  if(argint(0, &priority) > 0){
-    return -1;
-  }
-  else {
-    return setpriority(priority);
-  }
 }
